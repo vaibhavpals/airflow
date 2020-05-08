@@ -1,0 +1,113 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:12.2-alpine
+    container_name: postgres_cont
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+      - POSTGRES_PORT=5432
+    volumes:
+      - ./postgresql-data/data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+
+  redis:
+    image: redis:6.0.1-alpine
+    container_name: redis_cont
+    restart: always
+    ports:
+      - 6379:6379
+
+  init:
+    image: apache/airflow:dev-1.10.10
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+    entrypoint: /bin/bash
+    command: >
+      -c "airflow list_users || (airflow initdb && airflow create_user --role Admin --username airflow --password airflow -e airflow@airflow.com -f airflow -l airflow)"
+    restart: on-failure
+  
+  airflow:
+    image: apache/airflow:dev-1.10.10
+    container_name: airflow_cont
+    env_file:
+      - .env
+    restart: always
+    command:  webserver
+    ports:
+      - 8080:8080
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+
+  airflow-scheduler:
+    image: apache/airflow:dev-1.10.10
+    container_name: airflow_scheduler_cont
+    env_file:
+      - .env
+    restart: always
+    command: scheduler
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+
+  airflow-worker1:
+    image: apache/airflow:dev-1.10.10
+    container_name: airflow_worker1_cont
+    env_file:
+      - .env
+    restart: always
+    command: worker
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+
+  airflow-worker2:
+    image: apache/airflow:dev-1.10.10
+    container_name: airflow_worker2_cont
+    env_file:
+      - .env
+    restart: always
+    command: worker
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+
+  airflow-worker3:
+    image: apache/airflow:dev-1.10.10
+    container_name: airflow_worker3_cont
+    env_file:
+      - .env
+    command: worker
+    restart: always
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+
+  airflow-flower:
+    image: apache/airflow:dev-1.10.10
+    container_name: airflow_flower_cont
+    restart: always
+    volumes:
+      - ./airflow-data/dags:/opt/airflow/dags
+      - ./airflow-data/logfiles:/opt/airflow/logs
+      - ./airflow-data/plugins:/opt/airflow/plugins
+    env_file:
+      - .env
+    command: flower
+    ports:
+      - 5555:5555

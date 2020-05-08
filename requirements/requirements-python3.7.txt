@@ -44,6 +44,7 @@ astroid==2.3.3
 async-generator==1.10
 atlasclient==1.0.0
 attrs==19.3.0
+awscli==1.18.55
 aws-sam-translator==1.22.0
 aws-xray-sdk==2.4.3
 azure-common==1.1.25
