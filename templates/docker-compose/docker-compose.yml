@@ -1,4 +1,4 @@
-version: '3'
+version: '3.3'
 services:
   postgres:
     image: postgres:12.2-alpine
@@ -22,6 +22,7 @@ services:
 
   init:
     image: apache/airflow:dev-1.10.10
+    container_name: airflow_init
     env_file:
       - .env
     depends_on:
@@ -62,37 +63,12 @@ services:
       - ./airflow-data/logfiles:/opt/airflow/logs
       - ./airflow-data/plugins:/opt/airflow/plugins
 
-  airflow-worker1:
+  airflow-worker:
     image: apache/airflow:dev-1.10.10
-    container_name: airflow_worker1_cont
     env_file:
       - .env
     restart: always
     command: worker
-    volumes:
-      - ./airflow-data/dags:/opt/airflow/dags
-      - ./airflow-data/logfiles:/opt/airflow/logs
-      - ./airflow-data/plugins:/opt/airflow/plugins
-
-  airflow-worker2:
-    image: apache/airflow:dev-1.10.10
-    container_name: airflow_worker2_cont
-    env_file:
-      - .env
-    restart: always
-    command: worker
-    volumes:
-      - ./airflow-data/dags:/opt/airflow/dags
-      - ./airflow-data/logfiles:/opt/airflow/logs
-      - ./airflow-data/plugins:/opt/airflow/plugins
-
-  airflow-worker3:
-    image: apache/airflow:dev-1.10.10
-    container_name: airflow_worker3_cont
-    env_file:
-      - .env
-    command: worker
-    restart: always
     volumes:
       - ./airflow-data/dags:/opt/airflow/dags
       - ./airflow-data/logfiles:/opt/airflow/logs
