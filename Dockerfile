@@ -33,7 +33,9 @@
 #                        all the build essentials. This makes the image
 #                        much smaller.
 #
-ARG AIRFLOW_VERSION="2.0.0.dev0"
+ARG AIRFLOW_VERSION="1.10.10"
+ARG WWW_FOLDER="www"
+
 ARG AIRFLOW_EXTRAS="async,aws,azure,celery,dask,elasticsearch,gcp,kubernetes,mysql,postgres,redis,slack,ssh,statsd,virtualenv"
 
 ARG AIRFLOW_HOME=/opt/airflow
@@ -43,8 +45,8 @@ ARG AIRFLOW_GID="50000"
 ARG PIP_VERSION="19.0.2"
 ARG CASS_DRIVER_BUILD_CONCURRENCY="8"
 
-ARG PYTHON_BASE_IMAGE="python:3.6-slim-buster"
-ARG PYTHON_MAJOR_MINOR_VERSION="3.6"
+ARG PYTHON_BASE_IMAGE="python:3.7-slim-stretch"
+ARG PYTHON_MAJOR_MINOR_VERSION="3.7"
 
 ##############################################################################################
 # This is the build image where we build all dependencies
@@ -53,7 +55,7 @@ FROM ${PYTHON_BASE_IMAGE} as airflow-build-image
 SHELL ["/bin/bash", "-o", "pipefail", "-e", "-u", "-x", "-c"]
 
 LABEL org.apache.airflow.distro="debian"
-LABEL org.apache.airflow.distro.version="buster"
+LABEL org.apache.airflow.distro.version="stretch"
 LABEL org.apache.airflow.module="airflow"
 LABEL org.apache.airflow.component="airflow"
 LABEL org.apache.airflow.image="airflow-build-image"
@@ -141,7 +143,7 @@ RUN KEY="A4A9406876FCBD3C456770C88C718D3B5072E1F5" \
     apt-key list > /dev/null \
     && echo "deb http://repo.mysql.com/apt/debian/ stretch mysql-5.7" | tee -a /etc/apt/sources.list.d/mysql.list \
     && apt-get update \
-    && apt-get install --no-install-recommends -y \
+    && apt-get install --no-install-recommends -y --allow-unauthenticated \
         libmysqlclient-dev \
         mysql-client \
     && apt-get autoremove -yqq --purge \
@@ -151,9 +153,6 @@ ARG PIP_VERSION
 ENV PIP_VERSION=${PIP_VERSION}
 
 RUN pip install --upgrade pip==${PIP_VERSION}
-
-ARG AIRFLOW_SOURCES_FROM="."
-ENV AIRFLOW_SOURCES_FROM=${AIRFLOW_SOURCES_FROM}
 
 ARG AIRFLOW_SOURCES_TO="/opt/airflow"
 ENV AIRFLOW_SOURCES_TO=${AIRFLOW_SOURCES_TO}
@@ -178,6 +177,9 @@ ENV AIRFLOW_INSTALL_VERSION=${AIRFLOW_INSTALL_VERSION}
 ARG CONSTRAINT_REQUIREMENTS="requirements/requirements-python${PYTHON_MAJOR_MINOR_VERSION}.txt"
 ENV CONSTRAINT_REQUIREMENTS=${CONSTRAINT_REQUIREMENTS}
 
+ARG AIRFLOW_SOURCES_FROM="."
+ENV AIRFLOW_SOURCES_FROM=${AIRFLOW_SOURCES_FROM}
+
 WORKDIR /opt/airflow
 
 # hadolint ignore=DL3020
@@ -189,6 +191,7 @@ RUN pip install --user "${AIRFLOW_INSTALL_SOURCES}[${AIRFLOW_EXTRAS}]${AIRFLOW_I
     --constraint /requirements.txt && \
     find /root/.local/ -name '*.pyc' -print0 | xargs -0 rm -r && \
     find /root/.local/ -type d -name '__pycache__' -print0 | xargs -0 rm -r
+
 
 RUN \
     AIRFLOW_SITE_PACKAGE="/root/.local/lib/python${PYTHON_MAJOR_MINOR_VERSION}/site-packages/airflow"; \
@@ -291,11 +294,20 @@ RUN KEY="A4A9406876FCBD3C456770C88C718D3B5072E1F5" \
     apt-key list > /dev/null \
     && echo "deb http://repo.mysql.com/apt/debian/ stretch mysql-5.7" | tee -a /etc/apt/sources.list.d/mysql.list \
     && apt-get update \
-    && apt-get install --no-install-recommends -y \
+    && apt-get install --no-install-recommends -y --allow-unauthenticated \
         libmysqlclient20 \
         mysql-client \
     && apt-get autoremove -yqq --purge \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# JAVA
+RUN apt-get update \
+ && apt-get install -y openjdk-8-jre \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+ENV PATH $PATH:$JAVA_HOME/bin
 
 ARG PIP_VERSION
 ENV PIP_VERSION=${PIP_VERSION}
@@ -319,6 +331,31 @@ RUN mkdir -pv "${AIRFLOW_HOME}"; \
 
 COPY --chown=airflow:airflow --from=airflow-build-image /root/.local "/home/airflow/.local"
 COPY --chown=airflow:airflow --from=airflow-build-image /entrypoint /entrypoint
+
+# HADOOP
+ENV HADOOP_VERSION 2.8.5
+ENV HADOOP_HOME /usr/hadoop-$HADOOP_VERSION
+ENV HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+ENV PATH $PATH:$HADOOP_HOME/bin
+RUN curl -sL --retry 3 \
+  "http://archive.apache.org/dist/hadoop/common/hadoop-$HADOOP_VERSION/hadoop-$HADOOP_VERSION.tar.gz" \
+  | gunzip \
+  | tar -x -C /usr/ \
+ && rm -rf $HADOOP_HOME/share/doc \
+ && chown -R airflow:airflow $HADOOP_HOME
+
+# SPARK
+ENV SPARK_VERSION 2.4.5
+ENV SPARK_PACKAGE spark-${SPARK_VERSION}-bin-without-hadoop
+ENV SPARK_HOME /usr/spark-${SPARK_VERSION}
+ENV SPARK_DIST_CLASSPATH="$HADOOP_HOME/etc/hadoop/*:$HADOOP_HOME/share/hadoop/common/lib/*:$HADOOP_HOME/share/hadoop/common/*:$HADOOP_HOME/share/hadoop/hdfs/*:$HADOOP_HOME/share/hadoop/hdfs/lib/*:$HADOOP_HOME/share/hadoop/hdfs/*:$HADOOP_HOME/share/hadoop/yarn/lib/*:$HADOOP_HOME/share/hadoop/yarn/*:$HADOOP_HOME/share/hadoop/mapreduce/lib/*:$HADOOP_HOME/share/hadoop/mapreduce/*:$HADOOP_HOME/share/hadoop/tools/lib/*"
+ENV PATH $PATH:${SPARK_HOME}/bin
+RUN curl -sL --retry 3 \
+  "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
+  | gunzip \
+  | tar x -C /usr/ \
+ && mv /usr/$SPARK_PACKAGE $SPARK_HOME \
+ && chown -R airflow:airflow $SPARK_HOME
 
 USER airflow
 
